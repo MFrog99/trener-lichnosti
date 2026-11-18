@@ -1,0 +1,42 @@
+name: Сайт (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['.github/keepalive.txt', '**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Сборка
+        run: |
+          # адрес сайта, если он не задан в .env
+          if ! grep -q '^VITE_SITE_URL=http' .env 2>/dev/null; then
+            export VITE_SITE_URL="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/"
+          fi
+          npm run build
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+      - name: Публикация в ветку gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true

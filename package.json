@@ -1,0 +1,66 @@
+{
+  "name": "trener-lichnosti",
+  "productName": "Тренер личности",
+  "version": "1.0.0",
+  "description": "Тренер личности: домашние тренировки, релаксация, развитие личностных черт",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "author": "Тренер личности",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "android:add": "cap add android",
+    "android:sync": "npm run build && cap sync android",
+    "setup:supabase": "node scripts/setup-supabase.mjs",
+    "icons": "electron scripts/make-icons.cjs"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@capacitor-community/text-to-speech": "^6.1.0",
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/local-notifications": "^7.0.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0"
+  },
+  "build": {
+    "appId": "ru.trener.lichnosti",
+    "productName": "Тренер личности",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Тренер личности",
+      "artifactName": "TrenerLichnosti-Setup.${ext}"
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "esbuild@0.21.5": true
+  }
+}

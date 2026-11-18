@@ -1,0 +1,13 @@
+{
+  "appId": "ru.trener.lichnosti",
+  "appName": "Тренер личности",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "iconColor": "#6d5efc"
+    }
+  }
+}

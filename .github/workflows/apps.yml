@@ -1,0 +1,124 @@
+name: Сборка приложений (Windows и Android)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['.github/keepalive.txt', '**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apps
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Сборка установщика
+        shell: bash
+        run: |
+          if ! grep -q '^VITE_SITE_URL=http' .env 2>/dev/null; then
+            export VITE_SITE_URL="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/"
+          fi
+          npm run build
+          npx electron-builder --win nsis --publish never
+          mkdir -p out
+          cp release/TrenerLichnosti-Setup.exe out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: out/TrenerLichnosti-Setup.exe
+
+  android:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - name: Сборка веб-части
+        run: |
+          if ! grep -q '^VITE_SITE_URL=http' .env 2>/dev/null; then
+            export VITE_SITE_URL="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/"
+          fi
+          npm run build
+      - name: Android-проект
+        run: |
+          npx cap add android
+          npx cap sync android
+          # иконки приложения
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            dir=android/app/src/main/res/mipmap-${d%%:*}
+            size=${d##*:}
+            mkdir -p "$dir"
+            convert resources/icon.png -resize ${size}x${size} "$dir/ic_launcher.png"
+            cp "$dir/ic_launcher.png" "$dir/ic_launcher_round.png"
+            rm -f "$dir/ic_launcher_foreground.png"
+          done
+          # версия = номер сборки, чтобы обновления ставились поверх
+          sed -i "s/versionCode [0-9]*/versionCode ${GITHUB_RUN_NUMBER}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.0.${GITHUB_RUN_NUMBER}\"/" android/app/build.gradle
+      - name: Сборка APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Подпись APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > release.jks
+            PASS="$KEYSTORE_PASSWORD"
+          else
+            echo "::warning::Секрет ANDROID_KEYSTORE_BASE64 не задан — APK подписан временным ключом, обновления придётся ставить с удалением старой версии."
+            PASS=temp-password
+            keytool -genkeypair -keystore release.jks -storepass "$PASS" -keypass "$PASS" -alias app -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Trener Lichnosti"
+          fi
+          "$BT/zipalign" -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+          mkdir -p out
+          "$BT/apksigner" sign --ks release.jks --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out out/TrenerLichnosti.apk aligned.apk
+          rm -f release.jks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/TrenerLichnosti.apk
+
+  release:
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+      - name: Публикация релиза
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Тренер личности — сборка ${{ github.run_number }}
+          make_latest: true
+          body: |
+            **Windows:** скачайте `TrenerLichnosti-Setup.exe` и запустите. Если Windows покажет предупреждение SmartScreen — нажмите «Подробнее» → «Выполнить в любом случае» (у приложения нет платной цифровой подписи).
+
+            **Android:** скачайте `TrenerLichnosti.apk` на телефон и откройте. Разрешите установку из этого источника, если телефон спросит.
+          files: |
+            files/windows/TrenerLichnosti-Setup.exe
+            files/android/TrenerLichnosti.apk

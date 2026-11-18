@@ -1,0 +1,41 @@
+name: Не дать Supabase уснуть
+
+# Бесплатный проект Supabase ставится на паузу после 7 дней без активности.
+# Этот сценарий раз в 2 дня обращается к базе. Раз в месяц он также делает коммит,
+# потому что GitHub отключает расписания в репозиториях без активности 60 дней.
+on:
+  schedule:
+    - cron: '17 5 */2 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Запрос к базе
+        run: |
+          set -a; source .env; set +a
+          if [ -z "$VITE_SUPABASE_URL" ]; then echo "Supabase ещё не настроен"; exit 0; fi
+          for i in 1 2 3; do
+            code=$(curl -s -o /tmp/r.txt -w '%{http_code}' -X POST "$VITE_SUPABASE_URL/rest/v1/rpc/ping" \
+              -H "apikey: $VITE_SUPABASE_ANON_KEY" -H "Authorization: Bearer $VITE_SUPABASE_ANON_KEY" \
+              -H 'Content-Type: application/json' -d '{}')
+            echo "HTTP $code: $(cat /tmp/r.txt)"
+            [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          exit 1
+      - name: Ежемесячная отметка активности репозитория
+        run: |
+          if [ "$(date +%d)" -le "02" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            date -u +%Y-%m-%dT%H:%M:%SZ > .github/keepalive.txt
+            git config user.name "keepalive-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/keepalive.txt
+            git commit -m "keepalive: $(date -u +%Y-%m-%d)" || true
+            git push || true
+          fi
